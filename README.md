@@ -38,7 +38,8 @@ Jede analysierte Webseite erhält einen Score, der leicht verständlich die Qual
    - Wir könnten noch, ChatGPT API nutzen um die gecrawlten Infos zu validiereun und zur prüfen.
 
 2. **API-Integration (optional)**
-   - Z. B. [apivoid.com](https://www.apivoid.com/) für Site Trustworthiness (externe Bewertung)  
+   - Z. B. [apivoid.com](https://www.apivoid.com/) für Site Trustworthiness
+   - oder https://www.immuniweb.com/ssl/api/ 
 
 3. **Serverdaten sammeln**
    - IP-Adresse der Webseite ermitteln  

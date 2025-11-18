@@ -18,7 +18,7 @@ PRIV = ["datenschutz","privacy","privacy policy","data protection","gdpr","daten
 IMPR = ["impressum","imprint","legal notice","legal","site notice"]
 SEC  = ["informationssicherheitspolitik","security policy","information security policy","trust center","security"]
 
-# Erkenne ISO-Normen und extrahiere Namen
+# Erkenne ISO-Normen und extrahiere Namen --> Funktioniert noch so lala
 ISO_PATTERN = re.compile(r"\bISO\s*/?\s*(?:IEC\s*)?(9001|27001|22301|27701|20000(?:-1)?|14001|45001|31000)\b", re.I)
 
 def norm(u): 
@@ -70,8 +70,8 @@ def evidence(u, html):
         "url":u,
         "has_impressum":has_impr,
         "has_privacy":has_priv,
-        "iso_certifications": iso_certs,   # Neu: klare Liste der gefundenen ISO-Zertifizierungen
-        "iso_evidence": iso_evidence,      # Neu: Text-Snippets zur Nachvollziehbarkeit
+        "iso_certifications": iso_certs,   
+        "iso_evidence": iso_evidence,      
         "impressum_link":links["impressum"],
         "privacy_link":links["privacy"],
         "security_link":links["security"]
@@ -131,8 +131,8 @@ def crawl(start, max_pages=40, max_depth=2):
             "has_privacy":has_priv,
             "privacy_url":priv_url,
             "has_iso_mentions":has_iso,
-            "iso_certifications": sorted(list(all_iso_certs)),  # Neu: Gesamtübersicht der gefundenen Normen
-            "iso_evidence": all_iso_evidence,                   # Neu: Gesamt-Snippets
+            "iso_certifications": sorted(list(all_iso_certs)),  
+            "iso_evidence": all_iso_evidence,                   
             "security_policy_url":sec_url
         },
         "server":{"ip":ip,"country":country,"region":region,"city":city,"source":src},
@@ -141,6 +141,7 @@ def crawl(start, max_pages=40, max_depth=2):
     }
 
 def main():
+    #Helper
     p=argparse.ArgumentParser(description="Mini Compliance Crawler")
     p.add_argument("url", nargs="?", help="Website (z. B. example.com oder https://example.com)")
     p.add_argument("--max-pages", type=int, default=40)
@@ -173,4 +174,3 @@ def main():
 if __name__=="__main__": main()
 
 
-# /opt/homebrew/bin/python3.11 "/Users/davidgarvanovic/Library/Mobile Documents/iCloud~md~obsidian/Documents/DHBW/3. Semester/Software Engineering/TrustScore/compliance_crawler/compliance_crawler.py" https://bsi.bund.de --out result.json

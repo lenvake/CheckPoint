@@ -1,176 +1,151 @@
-import argparse, json, re, socket, sys, time
+"""
+Haupt-Orchestrierung: crawl(url, max_pages, max_depth) -> dict
+"""
+import logging
 from collections import deque
-from urllib.parse import urljoin, urlparse
+from datetime import datetime, timezone
+from urllib.parse import urlparse, urljoin
+
 import requests
-from bs4 import BeautifulSoup
 
-UA = "ComplianceCrawler/mini"
-TIMEOUT = 8
+from .constants import SEED_PATHS, BROWSER_HEADERS
+from .http_utils import make_session, fetch, get_html, norm_url, same_reg_domain
+from .tls_analyzer import analyze_tls, check_hsts
+from .geo_server import get_server_info
+from .page_analyzer import classify_page, extract_links, parse_security_txt
+from .scoring import compute_score
 
-SEED = [
-    "/", "/impressum", "/imprint", "/legal", "/privacy", "/datenschutz",
-    "/privacy-policy", "/security", "/information-security-policy",
-    "/informationssicherheit", "/informationssicherheitspolitik", "/trust",
-    "/de/informationssicherheitspolitik/"
-]
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("checkpoint")
 
-PRIV = ["datenschutz","privacy","privacy policy","data protection","gdpr","datenschutzerklärung"]
-IMPR = ["impressum","imprint","legal notice","legal","site notice"]
-SEC  = ["informationssicherheitspolitik","security policy","information security policy","trust center","security"]
 
-# Erkenne ISO-Normen und extrahiere Namen --> Funktioniert noch so lala
-ISO_PATTERN = re.compile(r"\bISO\s*/?\s*(?:IEC\s*)?(9001|27001|22301|27701|20000(?:-1)?|14001|45001|31000)\b", re.I)
+def crawl(url: str, max_pages: int = 50, max_depth: int = 3) -> dict:
+    """
+    Vollständiger CheckPoint Scan einer URL.
+    Gibt ein JSON serialisierbares Dict zurück.
+    """
+    url = norm_url(url)
+    parsed = urlparse(url)
+    hostname = parsed.netloc.split(":")[0]
 
-def norm(u): 
-    return u if u.startswith(("http://","https://")) else "https://"+u
+    log.info(f"[SCAN] {url}")
 
-def reg_domain(u: str) -> str:
-    try:
-        netloc = urlparse(u).netloc
-        host = netloc.split(":")[0]
-        parts = host.split(".")
-        return ".".join(parts[-2:]) if len(parts) >= 2 else host
-    except Exception:
-        return ""
+    session = make_session()
 
-def same_reg_domain(a: str, b: str) -> bool:
-    return reg_domain(a) == reg_domain(b)
+    # ── 1. TLS Analyse ───────────────────────────────────────────────────────
+    log.info("  [TLS] Analysiere Zertifikat…")
+    tls = analyze_tls(hostname)
 
-def fetch(u, s):
-    try: return s.get(u, timeout=TIMEOUT, allow_redirects=True)
-    except: return None
+    # ── 2. Startseite abrufen (für HSTS + CDN) ───────────────────────────────
+    root_resp = fetch(url, session)
+    resp_headers = root_resp.headers if root_resp is not None else {}
 
-def evidence(u, html):
-    s=BeautifulSoup(html,"lxml"); t=(s.get_text(" ",strip=True) or ""); tl=t.lower()
-    has_impr=any(x in tl for x in IMPR); has_priv=any(x in tl for x in PRIV)
-    # ISO-Treffer: Norm-Nummern in lesbare Labels konvertieren + Evidenz-Snippets
-    iso_certs, iso_evidence = [], []
-    for m in ISO_PATTERN.finditer(t):
-        num = m.group(1)
-        # Normalize Nummer zu Label
-        if num.startswith("20000"): label = "ISO 20000-1"
-        else: label = f"ISO {num}"
-        if label not in iso_certs: iso_certs.append(label)
-        start = max(0, m.start()-30); end = min(len(t), m.end()+30)
-        iso_evidence.append(t[start:end].strip())
-        if len(iso_evidence) >= 8: break
+    hsts_info = check_hsts(dict(resp_headers))
+    tls.update(hsts_info)
 
-    links={"impressum":None,"privacy":None,"security":None}
-    for a in s.find_all("a",href=True):
-        href=str(a["href"]).strip(); h=urljoin(u, href); href_l=href.lower()
-        lbl=(a.get_text(" ",strip=True) or "").lower()
-        if not links["impressum"] and (any(x in lbl for x in IMPR) or any(p in href_l for p in ["/impressum","/imprint","/legal"])): links["impressum"]=h
-        if not links["privacy"]   and (any(x in lbl for x in PRIV) or any(p in href_l for p in ["/privacy","/datenschutz","/privacy-policy"])): links["privacy"]=h
-        if not links["security"]  and (any(x in lbl for x in SEC)  or any(p in href_l for p in [
-            "/security","/information-security","/information-security-policy",
-            "/informationssicherheit","/informationssicherheitspolitik","/de/informationssicherheitspolitik/"
-        ])): links["security"]=h
+    # ── 3. Geo / Server ──────────────────────────────────────────────────────
+    log.info("  [GEO] Serverstandort…")
+    server = get_server_info(hostname, dict(resp_headers))
 
-    return {
-        "url":u,
-        "has_impressum":has_impr,
-        "has_privacy":has_priv,
-        "iso_certifications": iso_certs,   
-        "iso_evidence": iso_evidence,      
-        "impressum_link":links["impressum"],
-        "privacy_link":links["privacy"],
-        "security_link":links["security"]
+    # ── 4. security.txt ──────────────────────────────────────────────────────
+    security_txt: dict = {"found": False}
+    for sec_path in ["/.well-known/security.txt", "/security.txt"]:
+        sec_url = f"{parsed.scheme}://{parsed.netloc}{sec_path}"
+        sec_resp = fetch(sec_url, session)
+        if sec_resp and sec_resp.ok and len(sec_resp.text.strip()) > 20:
+            security_txt = parse_security_txt(sec_resp.text)
+            log.info(f"  [SEC] security.txt gefunden: {sec_url}")
+            break
+
+    visited: set[str] = set()
+    queue: deque[tuple[str, int]] = deque()
+
+    
+    for path in SEED_PATHS:
+        seed_url = f"{parsed.scheme}://{parsed.netloc}{path}"
+        queue.append((seed_url, 0))
+
+    compliance_state = {
+        "has_impressum":      False,
+        "impressum_url":      None,
+        "has_privacy":        False,
+        "privacy_url":        None,
+        "has_dsb":            False,
+        "dsb_name":           None,
+        "dsb_email":          None,
+        "iso_certifications": [],
+        "iso_evidence":       [],
     }
 
-def crawl(start, max_pages=40, max_depth=2):
-    start=norm(start); base=f"{urlparse(start).scheme}://{urlparse(start).netloc}"
-    s=requests.Session(); s.headers.update({"User-Agent":UA})
-    q=deque([(urljoin(base,p),0) for p in SEED]); seen=set(); findings=[]
-    has_impr=has_priv=False; has_iso=False
-    impr_url=priv_url=sec_url=None
-    all_iso_certs=set(); all_iso_evidence=[]
+    pages_crawled = 0
 
-    while q and len(seen)<max_pages:
-        u,d=q.popleft()
-        if u in seen: continue
-        seen.add(u)
-        r=fetch(u,s)
-        if not r or not r.ok: continue
-        ct=(r.headers.get("content-type") or "").lower()
-        if "text/html" not in ct and "text/plain" not in ct: continue
+    while queue and pages_crawled < max_pages:
+        cur_url, depth = queue.popleft()
 
-        ev=evidence(u,r.text); findings.append(ev)
-        if ev["has_impressum"] and not impr_url: impr_url=ev["impressum_link"]; has_impr=True
-        if ev["has_privacy"] and not priv_url:  priv_url=ev["privacy_link"];    has_priv=True
-        if ev["security_link"] and not sec_url: sec_url=ev["security_link"]
-        if ev["iso_certifications"]:
-            has_iso=True
-            for c in ev["iso_certifications"]:
-                all_iso_certs.add(c)
-            for snip in ev["iso_evidence"]:
-                if len(all_iso_evidence) < 12: all_iso_evidence.append(snip)
+        # Normalise
+        cur_url = cur_url.split("#")[0].rstrip("/") or cur_url
+        if cur_url in visited:
+            continue
+        if not same_reg_domain(cur_url, url):
+            continue
+        visited.add(cur_url)
 
-        if d<max_depth:
-            soup=BeautifulSoup(r.text,"lxml")
-            for a in soup.find_all("a",href=True):
-                nxt=urljoin(u, str(a["href"]).strip())
-                if nxt not in seen and same_reg_domain(base,nxt):
-                    q.append((nxt,d+1))
+        log.info(f"  [{pages_crawled + 1}/{max_pages}] GET {cur_url} (depth={depth})")
+        html, method = get_html(cur_url, session)
+        if not html:
+            continue
 
-    ip=None
-    try: ip=socket.gethostbyname(urlparse(start).netloc)
-    except: pass
-    country=region=city=src=None
-    if ip:
-        try:
-            jr=s.get(f"https://ipapi.co/{ip}/json/",timeout=TIMEOUT).json()
-            country,region,city,src=jr.get("country_name"),jr.get("region"),jr.get("city"),"ipapi"
-        except: src="none"
+        pages_crawled += 1
 
+        # Analyse page content
+        result = classify_page(cur_url, html)
+
+        # Merge findings
+        if result["is_impressum"] and not compliance_state["has_impressum"]:
+            compliance_state["has_impressum"] = True
+            compliance_state["impressum_url"] = cur_url
+
+        if result["is_privacy"] and not compliance_state["has_privacy"]:
+            compliance_state["has_privacy"] = True
+            compliance_state["privacy_url"] = cur_url
+
+        if result["has_dsb"] and not compliance_state["has_dsb"]:
+            compliance_state["has_dsb"]   = True
+            compliance_state["dsb_name"]  = result["dsb_name"]
+            compliance_state["dsb_email"] = result["dsb_email"]
+
+        for iso in result["iso_hits"]:
+            if iso not in compliance_state["iso_certifications"]:
+                compliance_state["iso_certifications"].append(iso)
+
+        for ev in result["iso_evidence"]:
+            if ev not in compliance_state["iso_evidence"]:
+                compliance_state["iso_evidence"].append(ev)
+
+        if depth < max_depth:
+            for child_url, prio in extract_links(cur_url, html):
+                if child_url not in visited:
+                    queue.append((child_url, depth + 1))
+
+    log.info(f"  Crawl abgeschlossen: {pages_crawled} Seiten")
+
+    # ── 6. Scoring ───────────────────────────────────────────────────────────
+    score_result = compute_score(tls, compliance_state, server, security_txt)
+
+    # ── 7. Ergebnis  ─────────────────────────────────────────────────────────
     return {
-        "target":start,
-        "scanned_pages":len(seen),
-        "compliance":{
-            "has_impressum":has_impr,
-            "impressum_url":impr_url,
-            "has_privacy":has_priv,
-            "privacy_url":priv_url,
-            "has_iso_mentions":has_iso,
-            "iso_certifications": sorted(list(all_iso_certs)),  
-            "iso_evidence": all_iso_evidence,                   
-            "security_policy_url":sec_url
-        },
-        "server":{"ip":ip,"country":country,"region":region,"city":city,"source":src},
-        "findings":findings,
-        "timestamp":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime())
+        "target":      url,
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
+        "total_score": score_result["total_score"],
+        "grade":       score_result["grade"],
+        "score_details": score_result["score_details"],
+        "tls":         tls,
+        "compliance":  compliance_state,
+        "server":      server,
+        "security_txt": security_txt,
+        "pages_crawled": pages_crawled,
     }
-
-def main():
-    #Helper
-    p=argparse.ArgumentParser(description="Mini Compliance Crawler")
-    p.add_argument("url", nargs="?", help="Website (z. B. example.com oder https://example.com)")
-    p.add_argument("--max-pages", type=int, default=40)
-    p.add_argument("--max-depth", type=int, default=2)
-    p.add_argument("--out", default="result.json")
-    p.add_argument("--csv", default=None, help="Optionaler CSV-Pfad")
-    a=p.parse_args()
-    if not a.url: p.print_help(); sys.exit(2)
-    res=crawl(a.url, a.max_pages, a.max_depth)
-    with open(a.out,"w",encoding="utf-8") as f: json.dump(res,f,ensure_ascii=False,indent=2)
-    print("JSON gespeichert:", a.out)
-    if a.csv:
-        import csv
-        row = {
-            "target": res["target"], "scanned_pages": res["scanned_pages"],
-            "ip": res["server"]["ip"], "country": res["server"]["country"],
-            "region": res["server"]["region"], "city": res["server"]["city"],
-            "has_impressum": res["compliance"]["has_impressum"], "impressum_url": res["compliance"]["impressum_url"],
-            "has_privacy": res["compliance"]["has_privacy"], "privacy_url": res["compliance"]["privacy_url"],
-            "has_iso_mentions": res["compliance"]["has_iso_mentions"],
-            "iso_certifications": "; ".join(res["compliance"]["iso_certifications"]),
-            "security_policy_url": res["compliance"]["security_policy_url"],
-            "timestamp": res["timestamp"],
-        }
-        with open(a.csv,"w",newline="",encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=list(row.keys()))
-            w.writeheader(); w.writerow(row)
-        print("CSV gespeichert:", a.csv)
-
-if __name__=="__main__": main()
-
-

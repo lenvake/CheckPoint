@@ -1,0 +1,218 @@
+## 📊 System-Architektur
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           CheckPoint (TrustScore Engine)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                              ┌────────────────────┐
+                              │   Frontend (Vue)   │
+                              │   Web-UI / UX      │
+                              └────────┬───────────┘
+                                       │ HTTP/JSON
+                                       │
+                    ┌──────────────────▼──────────────────┐
+                    │     Backend Flask API Server        │   │
+                    └──────────────────┬──────────────────┘
+                                       │
+                       ┌───────────────┼───────────────┐
+                       │               │               │
+                    ┌──▼──┐         ┌──▼──┐         ┌──▼──┐
+                    │ SSL │         │Crawl│         │ Geo │
+                    └─────┘         └─────┘         └─────┘
+
+## 📐 Klassendiagramm – Backend
+┌───────────────────────────────────────────────────────────────────┐
+│                        API Server (Flask)                         │
+├───────────────────────────────────────────────────────────────────┤
+│ - app: Flask()                                                    │
+│ - CORS enabled                                                    │
+├───────────────────────────────────────────────────────────────────┤
+│ + GET  /api/health() → {"status": "ok", "version": "3.0.0"}       │
+│ + POST /api/scan(url, max_pages, max_depth) → ScanResult JSON     │
+└───────────────────────┬───────────────────────────────────────────┘
+                        │ calls crawl()
+                        │
+┌───────────────────────▼───────────────────────────────────────────┐
+│                     Crawler (Orchestration)                       │
+├───────────────────────────────────────────────────────────────────┤
+│ def crawl(url: str, max_pages: int, max_depth: int) → dict        │
+├───────────────────────────────────────────────────────────────────┤
+│ 1. Normalize URL (http_utils)                                     │
+│ 2. Analyze TLS/SSL (tls_analyzer)                                 │
+│ 3. Fetch root page → headers (http_utils)                         │
+│ 4. Check HSTS (tls_analyzer)                                      │
+│ 5. Get server geo/IP (geo_server)                                 │
+│ 6. BFS-Crawl pages → links, extract_links (page_analyzer)         │
+│ 7. Classify pages (page_analyzer)                                 │
+│ 8. Parse security.txt (page_analyzer)                             │
+│ 9. Compute score (scoring)                                        │
+│ 10. Return result (JSON-serializable dict)                        │
+└───────────────────────┬──────────┬──────────┬──────────┬──────────┘
+                        │          │          │          │
+        ┌───────────────▼──┐   ┌───▼────────┐ │    ┌────▼─────────┐
+        │                  │   │            │ │    │              │
+    ┌───▼────────────────┐ │ ┌─▼──────────┐ │ │  ┌─▼────────────┐ │
+    │  TLS Analyzer      │ │ │ Geo Server │ │ │  │Page Analyzer │ │
+    ├────────────────────┤ │ ├────────────┤ │ │  ├──────────────┤ │
+    │ + analyze_tls()    │ │ │+ get_srvr_ ├─┘ │  │ + classify_  │ │
+    │ + check_hsts()     │ │ │  info()    │   │  │   page()     │ │
+    │ + get_cert_exp()   │ │ └────────────┘   │  │ + extract_   │ │
+    │ + get_cert_info()  │ │                  │  │   links()    │ │
+    └────────────────────┘ │              ┌───┘  │ + parse_     │ │
+                           │              │      │   security_  │ │
+                       ┌───▼──────────────┘      │   txt()      │ │
+                       │                         └──────────────┘ │
+        ┌──────────────▼──────────────────────────────────────────┐
+        │         HTTP Utils & Session Manager                    │
+        ├─────────────────────────────────────────────────────────┤
+        │ + make_session() → requests.Session (with headers)      │
+        │ + fetch(url, session) → Response | None                 │
+        │ + get_html(response) → str                              │
+        │ + norm_url(url) → normalized str                        │
+        │ + same_reg_domain(url1, url2) → bool                    │
+        └─────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │           Scoring Engine (0-100 Points)                  │
+        ├──────────────────────────────────────────────────────────┤
+        │ + compute_score(tls, compliance, server, security_txt)   │
+        │   → {"score": 0-100, "grade": "A+"-"F", "details": {...}}│
+        │                                                          │
+        │ Gewichtung:                                              │
+        │   • TLS / HTTPS      → 50 Punkte (40%)                   │
+        │   • Compliance       → 40 Punkte (32%)                   │
+        │   • Server / Geo     →  5 Punkte (4%)                    │
+        │   • ISO-Normen       →  5 Punkte (4%)                    │
+        │   • Security.txt     → 20 Punkte (16%)                   │
+        │   ────────────────────                                   │
+        │   TOTAL            → 120 Punkte → Normalisiert auf 100   │
+        │                                                          │
+        │ Noten-Schwellen:                                         │
+        │   95-100: A+      75-84:  B      30-44: E                │
+        │   85-94:  A       60-74:  C       0-29: F                │
+        │   (45-59: D)                                             │
+        └──────────────────────────────────────────────────────────┘
+
+
+## 📐 Klassendiagramm – Frontend
+┌──────────────────────────────────────────────────────────────────────┐
+│                        App (Main Entry)                              │
+├──────────────────────────────────────────────────────────────────────┤
+│ addEventListener('DOMContentLoaded', initApp)                        │
+├──────────────────────────────────────────────────────────────────────┤
+│ • initParticles()     ← Start background animation                  │
+│ • initScanForm()      ← Setup form listeners (from scan.js)         │
+│ • setupScrollBtn()    ← Show/hide scroll-to-top button              │
+│ • setupKeyboardShortcuts() ← ESC closes modal                       │
+└──────────────┬──────────────────────────────┬───────────┬────────────┘
+               │                              │           │
+        ┌──────▼──────┐              ┌────────▼─────┐  ┌──▼──────────┐
+        │ Particles   │              │ Form Handler │  │ Utils       │
+        ├─────────────┤              ├──────────────┤  ├─────────────┤
+        │ Canvas 2D   │              │+ initScan()  │  │+ q()        │
+        │ + animate() │              │+ onSubmit()  │  │+ qs()       │
+        │ + draw()    │              │+ onExample() │  │+ addClass() │
+        │ + particles │              │+ callAPI()   │  │+ removeClass
+        │   []        │              │+ onResponse()│  │+ toggleClass
+        └─────────────┘              └──────────────┘  │+ Toast.show
+                                                       └─────────────┘
+                    ┌────────────────┬─────────────┐
+                    │                │             │
+            ┌───────▼──────┐  ┌──────▼────┐  ┌────▼──────────┐
+            │ Loading      │  │ Renderer  │  │ Modal Manager │
+            ├──────────────┤  ├───────────┤  ├───────────────┤
+            │ + show()     │  │+ render() │  │+ openModal()  │
+            │ + hide()     │  │+ renderCard  │+ closeModal() │
+            │ + setStep()  │  │+ renderScore │+ populateBody │
+            │ + setPercent │  │+ renderBreak │+ bindCloseBtn │
+            │ + setUrl()   │  │  down()      │               │
+            └──────────────┘  │+ exportJSON()│               │
+                              │+ exportCSV() │               │
+                              └──────────────┴───────────────┘
+                                      ▲
+                                      │ API Response
+                    ┌─────────────────┴─────────────────┐
+                    │                                   │
+            ┌───────▼─────────┐              ┌─────────▼──────┐
+            │ API Call        │              │ Result Render  │
+            ├─────────────────┤              ├────────────────┤
+            │ POST /api/scan  │              │ • Score Hero   │
+            │ → ScanResult    │              │ • TLS Card     │
+            │   JSON          │              │ • Compliance   │
+            │                 │              │   Card         │
+            │ Listener:       │              │ • ISO Card     │
+            │ • onSuccess()   │              │ • Server Card  │
+            │ • onError()     │              │ • Breakdown    │
+            │ • onProgress()  │              │ • Modals       │
+            └─────────────────┘              └────────────────┘
+
+
+## 📐 Klassendiagramm – Frontend
+
+1. USER Input (URL)
+   │
+   └──► 2. FORM VALIDATION
+       │
+       └──► 3. LOADING OVERLAY (Start Ring Animation)
+           │
+           └──► 4. API CALL (POST /api/scan)
+               │
+               ├──► Backend: crawl()
+               │    │
+               │    ├─► TLS Analysis (SSL/HTTPS)
+               │    ├─► Server & Geo (IP Lookup)
+               │    ├─► Page Crawling (BFS)
+               │    ├─► Compliance Check (Impressum, Datenschutz)
+               │    ├─► Security.txt Parse
+               │    └─► Score Calculation (0-100, A-F)
+               │
+               └──► 5. RENDER RESPONSE
+                    │
+                    ├─► Score Hero (Ring, Grade, Pills)
+                    ├─► Category Cards (TLS, Compliance, ISO, Server)
+                    ├─► Score Breakdown (Points Distribution)
+                    ├─► Modals (Detailed Explanations)
+                    └─► Export (JSON, CSV)
+
+## 📋 Key Features
+
+✅ **TLS/HTTPS Analysis**
+- Protocol version detection (TLS 1.2, 1.3)
+- Certificate validity & expiration
+- HSTS & preload checking
+
+✅ **Compliance Checks**
+- Impressum detection
+- Datenschutz (Privacy Policy)
+- DSB (Data Protection Officer) link
+
+✅ **Server Intelligence**
+- IP Geolocation
+- CDN Detection
+- ISP & ASN lookup
+
+✅ **Security.txt**
+- Parsing & validation
+- Contact info extraction
+- Expiration checking
+
+✅ **ISO Certifications**
+- ISO 27001, ISO 9001
+- SOC 2 Type II evidence
+- Custom search patterns
+
+✅ **BFS Crawling**
+- Configurable depth & page limits
+- Link extraction & deduplication
+- Same-domain validation
+
+✅ **Scoring Engine**
+- Weighted multi-criteria scoring (0-100)
+- Grade classification (A+ to F)
+- Detailed point breakdown
+
+✅ **Rich Frontend**
+- Real-time loading indicator
+- Interactive modal details
+- Export (JSON, CSV)
+- Responsive design

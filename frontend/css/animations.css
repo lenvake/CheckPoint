@@ -1,0 +1,9 @@
+/* CheckPoint – animations.css: @keyframes · Responsive · Scroll-top */
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 680px) {
+  .score-hero { flex-direction: column; padding: 32px 24px; }
+  .hero-title { font-size: 2.8rem; }
+  .modal-card { padding: 28px 22px; }
+  .header-nav { display: none; }
+}

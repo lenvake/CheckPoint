@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CheckPoint – TrustScore</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- Split CSS: Reihenfolge ist wichtig -->
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+</head>
+<body>
+
+<!-- ░░ PARTICLE CANVAS ░░ -->
+<canvas id="particle-canvas"></canvas>
+
+<!-- ░░ HEADER ░░ -->
+<header class="site-header">
+  <div class="header-inner container">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M16 2L4 7v9c0 7.18 5.14 13.88 12 15.5C22.86 29.88 28 23.18 28 16V7L16 2z" fill="url(#lg1)" stroke="rgba(99,102,241,.4)" stroke-width="1"/>
+          <path d="M11 16l3.5 3.5L21 13" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="lg1" x1="4" y1="2" x2="28" y2="32" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#6366f1"/>
+              <stop offset="100%" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="logo-text">
+        <span class="logo-name">Check<span class="accent">Point</span></span>
+        <span class="logo-tag">TrustScore Engine</span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="#how">Wie es funktioniert</a>
+      <a href="#about">Über uns</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ░░ HERO ░░ -->
+<section class="hero">
+  <div class="hero-glow glow-1"></div>
+  <div class="hero-glow glow-2"></div>
+  <div class="container hero-inner">
+    <h1 class="hero-title">
+      Vertrauen<br/>
+      <span class="gradient-text">messbar</span> machen.
+    </h1>
+    <p class="hero-subtitle">
+      CheckPoint analysiert Sicherheit, Compliance &amp; Vertrauenswürdigkeit
+      jeder Website in Echtzeit, DSGVO, TLS, Impressum, ISO-Zertifizierungen und mehr.
+    </p>
+
+    <!-- Search Form -->
+    <div class="search-wrapper" id="search-wrapper">
+      <form class="search-form" id="scan-form">
+        <div class="search-inner">
+          <div class="search-icon">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+          </div>
+          <input
+            type="text"
+            id="url-input"
+            class="search-input"
+            placeholder="example.com oder https://..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="submit" class="search-btn" id="scan-btn">
+            <span class="btn-text">Analysieren</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </div>
+        <div class="search-examples">
+          <span>Beispiele:</span>
+          <button type="button" class="example-btn" data-url="bsi.bund.de">bsi.bund.de</button>
+          <button type="button" class="example-btn" data-url="sap.com">sap.com</button>
+          <button type="button" class="example-btn" data-url="github.com">github.com</button>
+          <button type="button" class="example-btn" data-url="apple.com">apple.com</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ░░ LOADING ░░ -->
+<div id="loading-overlay" class="loading-overlay hidden">
+  <div class="loading-card">
+    <div class="loading-ring">
+      <svg viewBox="0 0 120 120" class="ring-svg">
+        <defs>
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="50" class="ring-track"/>
+        <circle cx="60" cy="60" r="50" class="ring-progress" id="loading-ring"/>
+      </svg>
+      <div class="loading-percent" id="loading-pct">0%</div>
+    </div>
+    <div class="loading-steps" id="loading-steps">
+      <div class="loading-step active" data-step="dns">🔍 DNS auflösen…</div>
+      <div class="loading-step" data-step="tls">🔒 TLS analysieren…</div>
+      <div class="loading-step" data-step="crawl">🕷 Seiten crawlen…</div>
+      <div class="loading-step" data-step="compliance">📋 Compliance prüfen…</div>
+      <div class="loading-step" data-step="score">⚡ Score berechnen…</div>
+    </div>
+    <p class="loading-url" id="loading-url">–</p>
+  </div>
+</div>
+
+<!-- ░░ RESULT SECTION ░░ -->
+<section id="result-section" class="result-section hidden container">
+
+  <!-- Score Hero -->
+  <div class="score-hero" id="score-hero">
+    <div class="score-ring-wrap">
+      <svg viewBox="0 0 220 220" class="score-ring-svg" id="score-svg">
+        <defs>
+          <linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#6366f1" id="grad-stop1"/>
+            <stop offset="100%" stop-color="#8b5cf6" id="grad-stop2"/>
+          </linearGradient>
+        </defs>
+        <circle cx="110" cy="110" r="90" class="score-track"/>
+        <circle cx="110" cy="110" r="90" class="score-arc" id="score-arc" transform="rotate(-90 110 110)"
+                stroke-dasharray="565.48" stroke-dashoffset="565.48"/>
+      </svg>
+      <div class="score-inner">
+        <div class="score-number" id="score-number">0</div>
+        <div class="score-max">/100</div>
+        <div class="score-grade" id="score-grade">–</div>
+      </div>
+    </div>
+    <div class="score-meta">
+      <h2 class="score-target" id="score-target">–</h2>
+      <p class="score-label" id="score-label">–</p>
+      <div class="score-pills" id="score-pills"></div>
+      <div class="score-timestamp" id="score-timestamp">–</div>
+    </div>
+  </div>
+
+  <!-- Category Cards -->
+  <div class="cards-grid" id="cards-grid">
+    <div class="result-card card-tls" data-modal="tls">
+      <div class="card-header">
+        <div class="card-icon">🔒</div>
+        <div>
+          <div class="card-title">TLS / HTTPS</div>
+          <div class="card-sub">Verschlüsselung &amp; Zertifikat</div>
+        </div>
+        <div class="card-score-wrap"><div class="card-score" id="tls-score">–</div></div>
+      </div>
+      <div class="card-body" id="tls-body"></div>
+      <div class="card-footer">Details ansehen →</div>
+    </div>
+
+    <div class="result-card card-compliance" data-modal="compliance">
+      <div class="card-header">
+        <div class="card-icon">📋</div>
+        <div>
+          <div class="card-title">Compliance</div>
+          <div class="card-sub">Impressum · Datenschutz · DSB</div>
+        </div>
+        <div class="card-score-wrap"><div class="card-score" id="comp-score">–</div></div>
+      </div>
+      <div class="card-body" id="comp-body"></div>
+      <div class="card-footer">Details ansehen →</div>
+    </div>
+
+    <div class="result-card card-iso" data-modal="iso">
+      <div class="card-header">
+        <div class="card-icon">🏅</div>
+        <div>
+          <div class="card-title">ISO-Zertifizierungen</div>
+          <div class="card-sub">Erkannte Normen &amp; Evidenz</div>
+        </div>
+        <div class="card-score-wrap"><div class="card-score" id="iso-score">–</div></div>
+      </div>
+      <div class="card-body" id="iso-body"></div>
+      <div class="card-footer">Details ansehen →</div>
+    </div>
+
+    <div class="result-card card-server" data-modal="server">
+      <div class="card-header">
+        <div class="card-icon">🌍</div>
+        <div>
+          <div class="card-title">Server &amp; Geo</div>
+          <div class="card-sub">Standort · CDN · IP</div>
+        </div>
+        <div class="card-score-wrap"><div class="card-score" id="server-score">–</div></div>
+      </div>
+      <div class="card-body" id="server-body"></div>
+      <div class="card-footer">Details ansehen →</div>
+    </div>
+  </div>
+
+  <!-- Score Breakdown -->
+  <div class="breakdown-section">
+    <h3 class="section-title">Score-Aufschlüsselung</h3>
+    <div class="breakdown-grid" id="breakdown-grid"></div>
+  </div>
+
+  <!-- Export -->
+  <div class="export-bar">
+    <span>Ergebnis exportieren:</span>
+    <button class="export-btn" id="export-json">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd"/></svg>
+      JSON
+    </button>
+    <button class="export-btn" id="export-csv">
+      <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+      CSV
+    </button>
+  </div>
+</section>
+
+<!-- ░░ MODAL ░░ -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal-card">
+    <button class="modal-close" id="modal-close">✕</button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ░░ TOAST ░░ -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- ░░ SCROLL TOP ░░ -->
+<button id="scroll-top" class="scroll-top" aria-label="Nach oben">↑</button>
+
+<!-- ░░ HOW IT WORKS ░░ -->
+<section class="how-section container" id="how">
+  <h2 class="section-title center">Wie es funktioniert</h2>
+  <div class="how-grid">
+    <div class="how-card">
+      <div class="how-num">01</div>
+      <h3>URL eingeben</h3>
+      <p>Gib eine beliebige Website-URL ein – CheckPoint übernimmt den Rest.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-num">02</div>
+      <h3>Analyse starten</h3>
+      <p>Unser Crawler prüft TLS, Impressum, Datenschutz, ISO-Normen und Serverstandort.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-num">03</div>
+      <h3>TrustScore erhalten</h3>
+      <p>Du erhältst einen TrustScore (0–100) mit Note A+–F und detaillierten Erklärungen.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ░░ FOOTER ░░ -->
+<footer class="site-footer" id="about">
+  <div class="container footer-inner">
+    <div class="footer-logo">Check<span class="accent">Point</span></div>
+    <p class="footer-copy">© 2026 CheckPoint – TrustScore Engine. Alle Rechte vorbehalten.</p>
+  </div>
+</footer>
+
+<!-- ░░ SCRIPTS – Reihenfolge wichtig ░░ -->
+<script src="js/particles.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/loading.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/scan.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

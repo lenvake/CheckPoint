@@ -4,13 +4,13 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 
                               ┌────────────────────┐
-                              │   Frontend (Vue)   │
+                              │   Frontend (JS)    │
                               │   Web-UI / UX      │
                               └────────┬───────────┘
                                        │ HTTP/JSON
                                        │
                     ┌──────────────────▼──────────────────┐
-                    │     Backend Flask API Server        │   │
+                    │     Backend Flask API Server        │  
                     └──────────────────┬──────────────────┘
                                        │
                        ┌───────────────┼───────────────┐
@@ -54,7 +54,7 @@
     │  TLS Analyzer      │ │ │ Geo Server │ │ │  │Page Analyzer │ │
     ├────────────────────┤ │ ├────────────┤ │ │  ├──────────────┤ │
     │ + analyze_tls()    │ │ │+ get_srvr_ ├─┘ │  │ + classify_  │ │
-    │ + check_hsts()     │ │ │  info()    │   │  │   page()     │ │
+    │ + check_hsts()     │ │ │ info()(API)│   │  │   page()     │ │
     │ + get_cert_exp()   │ │ └────────────┘   │  │ + extract_   │ │
     │ + get_cert_info()  │ │                  │  │   links()    │ │
     └────────────────────┘ │              ┌───┘  │ + parse_     │ │
@@ -104,18 +104,18 @@
 │ • initScanForm()      ← Setup form listeners (from scan.js)         │
 │ • setupScrollBtn()    ← Show/hide scroll-to-top button              │
 │ • setupKeyboardShortcuts() ← ESC closes modal                       │
-└──────────────┬──────────────────────────────┬───────────┬────────────┘
-               │                              │           │
-        ┌──────▼──────┐              ┌────────▼─────┐  ┌──▼──────────┐
-        │ Particles   │              │ Form Handler │  │ Utils       │
-        ├─────────────┤              ├──────────────┤  ├─────────────┤
-        │ Canvas 2D   │              │+ initScan()  │  │+ q()        │
-        │ + animate() │              │+ onSubmit()  │  │+ qs()       │
-        │ + draw()    │              │+ onExample() │  │+ addClass() │
-        │ + particles │              │+ callAPI()   │  │+ removeClass
-        │   []        │              │+ onResponse()│  │+ toggleClass
-        └─────────────┘              └──────────────┘  │+ Toast.show
-                                                       └─────────────┘
+└──────────────┬───────────────────────────────┬───────────┬──────────┘
+               │             │                 │           │
+        ┌──────▼──────┐      │        ┌────────▼─────┐  ┌──▼──────────┐
+        │ Particles   │      │        │ Form Handler │  │ Utils       │
+        ├─────────────┤      │        ├──────────────┤  ├─────────────┤
+        │ Canvas 2D   │      │        │+ initScan()  │  │+ q()        │
+        │ + animate() │      │        │+ onSubmit()  │  │+ qs()       │
+        │ + draw()    │      │        │+ onExample() │  │+ addClass() │
+        │ + particles │      │        │+ callAPI()   │  │+ removeClass│
+        │   []        │      │        │+ onResponse()│  │+ toggleClass│
+        └─────────────┘      │        └──────────────┘  │+ Toast.show │
+                             │                          └─────────────┘
                     ┌────────────────┬─────────────┐
                     │                │             │
             ┌───────▼──────┐  ┌──────▼────┐  ┌────▼──────────┐
@@ -147,7 +147,7 @@
             └─────────────────┘              └────────────────┘
 
 
-## 📐 Klassendiagramm – Frontend
+## 🔄 Datenfluss – Scan-Prozess
 
 1. USER Input (URL)
    │

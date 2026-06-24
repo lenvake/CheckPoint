@@ -1,6 +1,8 @@
 /* ================================================================
    CheckPoint – renderer.js
    Ergebnis-Rendering: Score-Ring, Cards, Breakdown, Export
+   Feature 1: Mixed Content Detection
+   Feature 2: HTTP→HTTPS Redirect-Check
    ================================================================ */
 'use strict';
 
@@ -13,6 +15,8 @@ const SCORE_LABELS = {
   cert_type:           '🏷 Zertifikatstyp (DV/OV/EV)',
   hsts_present:        '🔐 HSTS vorhanden',
   hsts_max_age_ok:     '⏱ HSTS max-age ≥ 1 Jahr',
+  mixed_content:       '⚠️ Mixed Content',          
+  https_redirect:      '↪️ HTTP→HTTPS Redirect',    
   security_txt:        '📄 security.txt',
   has_impressum:       '📋 Impressum',
   has_privacy:         '🔏 Datenschutzerklärung',
@@ -67,15 +71,21 @@ function _renderScoreRing(score, grade, color, label, d, tls, comp, srv, stxt) {
 
   // Status pills
   const pills = [];
-  if (tls.active)          pills.push(['ok',   'HTTPS aktiv']);
-  else                     pills.push(['bad',  'Kein HTTPS']);
-  if (comp.has_impressum)  pills.push(['ok',   'Impressum']);
-  else                     pills.push(['bad',  'Kein Impressum']);
-  if (comp.has_privacy)    pills.push(['ok',   'Datenschutz']);
-  else                     pills.push(['bad',  'Kein Datenschutz']);
-  if (comp.has_dsb)        pills.push(['ok',   'DSB']);
-  if (stxt.found)          pills.push(['ok',   'security.txt']);
-  if (srv.cdn_detected)    pills.push(['warn', 'CDN erkannt']);
+  if (tls.active)                   pills.push(['ok',   'HTTPS aktiv']);
+  else                              pills.push(['bad',  'Kein HTTPS']);
+  if (comp.has_impressum)           pills.push(['ok',   'Impressum']);
+  else                              pills.push(['bad',  'Kein Impressum']);
+  if (comp.has_privacy)             pills.push(['ok',   'Datenschutz']);
+  else                              pills.push(['bad',  'Kein Datenschutz']);
+  if (comp.has_dsb)                 pills.push(['ok',   'DSB']);
+  if (stxt.found)                   pills.push(['ok',   'security.txt']);
+  if (tls.mixed_content)            pills.push(['bad',  `Mixed Content (${tls.mixed_content_count})`]); // Feature 1
+  // ── NEU (Feature 2): Redirect-Pill ──────────────────────────────────────
+  if (tls.redirect_to_https === false && tls.active)
+                                    pills.push(['warn', 'Kein HTTP-Redirect']);
+  else if (tls.redirect_to_https)   pills.push(['ok',   `Redirect (${tls.redirect_hops} Hop${tls.redirect_hops !== 1 ? 's' : ''})`]);
+  // ─────────────────────────────────────────────────────────────────────────
+  if (srv.cdn_detected)             pills.push(['warn', 'CDN erkannt']);
 
   $('score-pills').innerHTML = pills.map(([cls, txt]) =>
     `<span class="pill pill-${cls}">${txt}</span>`
@@ -84,17 +94,30 @@ function _renderScoreRing(score, grade, color, label, d, tls, comp, srv, stxt) {
 
 // ── TLS Card ──────────────────────────────────────────────────────────────────
 function _renderTlsCard(tls, stxt, sd) {
-  const tlsMax = 50;
+  const tlsMax = 55; // ← NEU (Feature 2): +5 Punkte für Redirect
   const tlsPts = ['https_reachable', 'tls_protocol', 'cert_valid', 'cert_not_expiring',
-                  'cert_hostname_match', 'cert_type', 'hsts_present', 'hsts_max_age_ok']
+                  'cert_hostname_match', 'cert_type', 'hsts_present', 'hsts_max_age_ok',
+                  'https_redirect']  // ← NEU (Feature 2)
     .reduce((a, k) => a + (sd[k]?.points || 0), 0);
-  $('tls-score').textContent = `${tlsPts}/${tlsMax}`;
+
+  const mcMalus = sd['mixed_content']?.points || 0;
+  $('tls-score').textContent = `${tlsPts + mcMalus}/${tlsMax}`;
 
   $('tls-body').innerHTML = [
     [tls.active,              `HTTPS: ${tls.version || '–'}`],
     [!tls.cert_expired,       `Zertifikat: ${tls.cert_type || 'DV'} · ${(tls.days_remaining ?? '?')} Tage`],
     [tls.cert_hostname_match, `Hostname Match`],
     [tls.hsts,                `HSTS: max-age=${tls.hsts_max_age ?? 0}`],
+    [!tls.mixed_content,      tls.mixed_content                                          // Feature 1
+        ? `Mixed Content: ${tls.mixed_content_count} unsichere Ressource(n)`
+        : `Kein Mixed Content`],
+    // ── NEU (Feature 2): Redirect-Zeile ─────────────────────────────────
+    [tls.redirect_to_https,   tls.redirect_to_https
+        ? `HTTP→HTTPS Redirect: ${tls.redirect_hops} Hop(s)`
+        : tls.redirect_error
+            ? `Redirect-Check fehlgeschlagen`
+            : `Kein HTTP→HTTPS Redirect`],
+    // ─────────────────────────────────────────────────────────────────────
     [stxt.found,              `security.txt`],
   ].map(([ok, txt]) => `<div class="check-row">${icon(ok)}<span>${txt}</span></div>`).join('');
 }
@@ -144,19 +167,27 @@ function _renderBreakdown(sd) {
     const item = sd[k] || {};
     const pts  = item.points ?? 0;
     const max  = item.max ?? 0;
-    const pct  = max > 0 ? (pts / max) * 100 : 0;
-    const cls  = pts === max ? 'full' : pts > 0 ? 'part' : 'zero';
+
+    // Sonderdarstellung für Malus-Kriterien (max=0, pts negativ) – Feature 1
+    const isMalus = max === 0 && pts < 0;
+    const pct  = isMalus
+      ? 100
+      : max > 0 ? (pts / max) * 100 : 0;
+    const cls  = isMalus ? 'zero'
+      : pts === max ? 'full'
+      : pts > 0    ? 'part'
+      :              'zero';
+
     return `<div class="bd-row" style="animation-delay:${i * 0.04}s">
       <span class="bd-label">${lbl}</span>
       <div class="bd-bar-wrap">
         <div class="bd-bar ${cls}" style="width:0%" data-pct="${pct.toFixed(0)}"></div>
       </div>
-      <span class="bd-pts">${pts}/${max}</span>
+      <span class="bd-pts ${cls}">${isMalus ? pts : `${pts}/${max}`}</span>
       <span class="bd-reason">${item.reason || ''}</span>
     </div>`;
   }).join('');
 
-  // Animate bars after paint
   requestAnimationFrame(() => {
     qsa('.bd-bar').forEach(bar => {
       bar.style.transition = 'width 1s cubic-bezier(.4,0,.2,1)';
@@ -211,8 +242,39 @@ function openModal(type, d) {
         <tr><th>Gültig bis</th><td>${tls.valid_until || '–'} (${tls.days_remaining ?? '?'} Tage)</td></tr>
         <tr><th>SANs</th><td>${(tls.cert_san || []).slice(0, 8).join(', ') || '–'}</td></tr>
         <tr><th>HSTS</th><td>${tls.hsts ? `✓ max-age=${tls.hsts_max_age}` : '✗ nicht gesetzt'}</td></tr>
+        <tr><th>Mixed Content</th><td>${
+          tls.mixed_content
+            ? `⚠️ ${tls.mixed_content_count} unsichere HTTP-Ressource(n)<br>
+               <div style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--muted)">
+                 ${(tls.mixed_content_urls || []).slice(0, 5).map(u =>
+                   `<div style="margin-bottom:4px;word-break:break-all">• ${u}</div>`
+                 ).join('')}
+                 ${tls.mixed_content_count > 5
+                   ? `<div style="color:var(--yellow)">… und ${tls.mixed_content_count - 5} weitere</div>`
+                   : ''}
+               </div>`
+            : '✓ Kein Mixed Content erkannt'
+        }</td></tr>
+        <tr><th>HTTP→HTTPS</th><td>${
+          /* ── NEU (Feature 2) ── */
+          tls.redirect_error
+            ? `⚠️ Nicht prüfbar: ${tls.redirect_error}`
+            : tls.redirect_to_https
+              ? `✓ Weiterleitung aktiv (${tls.redirect_hops} Hop(s))<br>
+                 <div style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--muted)">
+                   ${(tls.redirect_chain || []).map((u, i) =>
+                     `<div style="margin-bottom:2px">${i === 0 ? '→' : '↳'} ${u}</div>`
+                   ).join('')}
+                 </div>`
+              : '✗ Keine HTTP→HTTPS Weiterleitung'
+        }</td></tr>
+        <tr><th>www-Redirect</th><td>${
+          /* ── NEU (Feature 2) ── */
+          tls.www_redirect ? '✓ www. leitet korrekt weiter' : '✗ www. leitet nicht auf HTTPS'
+        }</td></tr>
         <tr><th>security.txt</th><td>${stxt.found ? `✓ ${stxt.contact || ''}` : '✗ nicht gefunden'}</td></tr>
       </table>`,
+
     compliance: () => `
       <h2>📋 Compliance Details</h2>
       <table class="modal-table">
@@ -221,6 +283,7 @@ function openModal(type, d) {
         <tr><th>DSB</th><td>${comp.has_dsb ? '✓' : '✗'} ${comp.dsb_name || ''}</td></tr>
         <tr><th>DSB E-Mail</th><td>${comp.dsb_email || '–'}</td></tr>
       </table>`,
+
     iso: () => `
       <h2>🏅 ISO-Zertifizierungen</h2>
       ${(comp.iso_certifications || []).length === 0
@@ -230,6 +293,7 @@ function openModal(type, d) {
               <strong>${ev.norm}</strong>
               <blockquote>${ev.snippet}</blockquote>
             </div>`).join('')}`,
+
     server: () => `
       <h2>🌍 Server & Geo Details</h2>
       <table class="modal-table">

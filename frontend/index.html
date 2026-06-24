@@ -7,7 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <!-- Split CSS: Reihenfolge ist wichtig -->
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
@@ -15,10 +14,10 @@
 </head>
 <body>
 
-<!-- ░░ PARTICLE CANVAS ░░ -->
+<!-- Particels -->
 <canvas id="particle-canvas"></canvas>
 
-<!-- ░░ HEADER ░░ -->
+<!-- Header -->
 <header class="site-header">
   <div class="header-inner container">
     <div class="logo">
@@ -46,7 +45,7 @@
   </div>
 </header>
 
-<!-- ░░ HERO ░░ -->
+<!-- HERO -->
 <section class="hero">
   <div class="hero-glow glow-1"></div>
   <div class="hero-glow glow-2"></div>
@@ -57,7 +56,7 @@
     </h1>
     <p class="hero-subtitle">
       CheckPoint analysiert Sicherheit, Compliance &amp; Vertrauenswürdigkeit
-      jeder Website in Echtzeit, DSGVO, TLS, Impressum, ISO-Zertifizierungen und mehr.
+      jeder Website.
     </p>
 
     <!-- Search Form -->
@@ -82,17 +81,16 @@
         </div>
         <div class="search-examples">
           <span>Beispiele:</span>
-          <button type="button" class="example-btn" data-url="bsi.bund.de">bsi.bund.de</button>
-          <button type="button" class="example-btn" data-url="sap.com">sap.com</button>
           <button type="button" class="example-btn" data-url="github.com">github.com</button>
-          <button type="button" class="example-btn" data-url="apple.com">apple.com</button>
+          <button type="button" class="example-btn" data-url="edataconsulting.com">edataconsulting</button>
+          <button type="button" class="example-btn" data-url="sap.com">sap.com</button>
         </div>
       </form>
     </div>
   </div>
 </section>
 
-<!-- ░░ LOADING ░░ -->
+<!--  Ladevorgang -->
 <div id="loading-overlay" class="loading-overlay hidden">
   <div class="loading-card">
     <div class="loading-ring">
@@ -119,7 +117,7 @@
   </div>
 </div>
 
-<!-- ░░ RESULT SECTION ░░ -->
+<!-- Result  -->
 <section id="result-section" class="result-section hidden container">
 
   <!-- Score Hero -->
@@ -165,6 +163,20 @@
       <div class="card-footer">Details ansehen →</div>
     </div>
 
+    <!-- DNS Card -->
+    <div class="result-card card-dns" data-modal="dns">
+      <div class="card-header">
+        <div class="card-icon">🧬</div>
+        <div>
+          <div class="card-title">DNS Security</div>
+          <div class="card-sub">DNSSEC · DMARC · SPF · DKIM · MX</div>
+        </div>
+        <div class="card-score-wrap"><div class="card-score" id="dns-score">–</div></div>
+      </div>
+      <div class="card-body" id="dns-body"></div>
+      <div class="card-footer">Details ansehen →</div>
+    </div>
+
     <div class="result-card card-compliance" data-modal="compliance">
       <div class="card-header">
         <div class="card-icon">📋</div>
@@ -178,12 +190,13 @@
       <div class="card-footer">Details ansehen →</div>
     </div>
 
+    <!-- Zertifikate & Normen -->
     <div class="result-card card-iso" data-modal="iso">
       <div class="card-header">
         <div class="card-icon">🏅</div>
         <div>
-          <div class="card-title">ISO-Zertifizierungen</div>
-          <div class="card-sub">Erkannte Normen &amp; Evidenz</div>
+          <div class="card-title">Zertifikate & Normen</div>
+          <div class="card-sub">ISO · COBIT · SOC 2 · u.v.m.</div>
         </div>
         <div class="card-score-wrap"><div class="card-score" id="iso-score">–</div></div>
       </div>
@@ -207,7 +220,7 @@
 
   <!-- Score Breakdown -->
   <div class="breakdown-section">
-    <h3 class="section-title">Score-Aufschlüsselung</h3>
+    <h3 class="section-title">Score Breakdown</h3>
     <div class="breakdown-grid" id="breakdown-grid"></div>
   </div>
 
@@ -225,7 +238,7 @@
   </div>
 </section>
 
-<!-- ░░ MODAL ░░ -->
+<!--  MODALS  -->
 <div id="modal-overlay" class="modal-overlay hidden">
   <div class="modal-card">
     <button class="modal-close" id="modal-close">✕</button>
@@ -233,25 +246,23 @@
   </div>
 </div>
 
-<!-- ░░ TOAST ░░ -->
+<!--  TOAST -->
 <div id="toast" class="toast hidden"></div>
 
-<!-- ░░ SCROLL TOP ░░ -->
-<button id="scroll-top" class="scroll-top" aria-label="Nach oben">↑</button>
 
-<!-- ░░ HOW IT WORKS ░░ -->
+<!-- Abschnitt: Wie es funktioniert -->
 <section class="how-section container" id="how">
   <h2 class="section-title center">Wie es funktioniert</h2>
   <div class="how-grid">
     <div class="how-card">
       <div class="how-num">01</div>
       <h3>URL eingeben</h3>
-      <p>Gib eine beliebige Website-URL ein – CheckPoint übernimmt den Rest.</p>
+      <p>Gib eine beliebige URL ein, CheckPoint übernimmt den Rest.</p>
     </div>
     <div class="how-card">
       <div class="how-num">02</div>
       <h3>Analyse starten</h3>
-      <p>Unser Crawler prüft TLS, Impressum, Datenschutz, ISO-Normen und Serverstandort.</p>
+      <p>Unser Crawler prüft TLS/HTTPS, DNS, Impressum, Datenschutz, Zertifikate und Serverstandort der Webseite.</p>
     </div>
     <div class="how-card">
       <div class="how-num">03</div>
@@ -261,15 +272,15 @@
   </div>
 </section>
 
-<!-- ░░ FOOTER ░░ -->
+<!-- FOOTER  -->
 <footer class="site-footer" id="about">
   <div class="container footer-inner">
     <div class="footer-logo">Check<span class="accent">Point</span></div>
-    <p class="footer-copy">© 2026 CheckPoint – TrustScore Engine. Alle Rechte vorbehalten.</p>
+    <p class="footer-copy">© 2026 CheckPoint – TrustScore Engine</p>
   </div>
 </footer>
 
-<!-- ░░ SCRIPTS – Reihenfolge wichtig ░░ -->
+<!-- ░░ SCRIPTS ░░ -->
 <script src="js/particles.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/loading.js"></script>

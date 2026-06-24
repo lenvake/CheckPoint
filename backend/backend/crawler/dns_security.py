@@ -1,20 +1,3 @@
-"""DNS-Security Analyse für CheckPoint.
-
-Ziele (v1):
-- DNSSEC (DNSKEY + DS am Parent; optional AD-bit als Hinweis auf Validierung)
-- SPF (v=spf1… und Qualifier -all/~all)
-- DMARC (_dmarc TXT, Policy)
-- DKIM (heuristische Selector-Discovery)
-- MX (vorhanden / Null-MX)
-
-Implementation Notes:
-- Keine extra Dependencies: dnspython ist nicht vorausgesetzt.
-- Lookups via DNS-over-HTTPS (Cloudflare JSON API) für stabile, HTTPS-only Auflösung.
-
-Datenschutz/Compliance:
-- DoH-Anfragen sind normale HTTPS-Requests; es wird nur der Domainname aufgelöst.
-"""
-
 from __future__ import annotations
 
 import logging

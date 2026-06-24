@@ -1,12 +1,3 @@
-"""
-HTTP-Fetching mit Retry, Playwright-Fallback und Hilfs-Funktionen.
-Feature 2: check_redirect_chain() für HTTP→HTTPS Redirect-Check
-Verbesserungen:
-  - Playwright-Fallback aggressiver: wird auch bei SPA-Erkennung getriggert
-  - Consent-Banner automatisch wegklicken via Playwright
-  - PDF-Text-Extraktion via pdfplumber
-  - Sitemap.xml parsen für bessere Seed-URLs
-"""
 import logging
 import time
 from urllib.parse import urlparse, urljoin
@@ -30,23 +21,56 @@ def norm_url(u: str) -> str:
 
 
 def reg_domain(u: str) -> str:
+    """Sehr einfache Registrable-Domain Heuristik + Sonderfall für bekannte ccTLDs."""
     try:
-        host = urlparse(u).netloc.split(":")[0]
-        parts = host.split(".")
-        return ".".join(parts[-2:]) if len(parts) >= 2 else host
+        host = urlparse(u).netloc.split(":")[0].lower()
+        parts = [p for p in host.split(".") if p]
+        if len(parts) < 2:
+            return host
+
+        # ccTLD 2nd-level Sonderfälle
+        sld_cc = {
+            "co.uk", "org.uk", "ac.uk",
+            "com.au", "net.au", "org.au",
+            "co.jp",
+        }
+        last2 = ".".join(parts[-2:])
+        if last2 in sld_cc and len(parts) >= 3:
+            return ".".join(parts[-3:])
+
+        return last2
     except Exception:
         return ""
 
 
 def same_reg_domain(a: str, b: str) -> bool:
-    return reg_domain(a) == reg_domain(b)
+    """
+    Lockerer Domain-Match: erlaubt z.B. .de → .com wenn 2nd-level gleich ist. Wichtig sonst können wir Pfade verfehlen
+    """
+    try:
+        da = reg_domain(a)
+        db = reg_domain(b)
+        if da == db:
+            return True
+
+        # eTLD+1 kann sich ändern (.de/.com) – wir matchen dann auf den Label vor der TLD.
+        a_host = urlparse(a).netloc.split(":")[0].lower()
+        b_host = urlparse(b).netloc.split(":")[0].lower()
+        a_parts = [p for p in a_host.split(".") if p]
+        b_parts = [p for p in b_host.split(".") if p]
+        if len(a_parts) >= 2 and len(b_parts) >= 2:
+            return a_parts[-2] == b_parts[-2]
+    except Exception:
+        pass
+
+    return False
 
 
 def link_score(href: str, text: str) -> int:
     combined = (href + " " + text).lower()
     score = 0
-    high  = PRIV_KW + IMPR_KW + DSB_KW
-    med   = SEC_KW + ["iso", "cert", "trust", "compliance", "quality"]
+    high = PRIV_KW + IMPR_KW + DSB_KW
+    med = SEC_KW + ["iso", "cert", "trust", "compliance", "quality"]
     for kw in high:
         if kw in combined:
             score += 10
@@ -86,11 +110,11 @@ def check_redirect_chain(hostname: str, session: requests.Session) -> dict:
     """
     result = {
         "redirects_to_https": False,
-        "redirect_hops":      0,
-        "redirect_chain":     [],
-        "final_url":          None,
-        "www_redirect":       False,
-        "error":              None,
+        "redirect_hops": 0,
+        "redirect_chain": [],
+        "final_url": None,
+        "www_redirect": False,
+        "error": None,
     }
 
     http_url = f"http://{hostname}"
@@ -99,8 +123,8 @@ def check_redirect_chain(hostname: str, session: requests.Session) -> dict:
         resp = session.get(http_url, timeout=TIMEOUT, allow_redirects=True)
         chain = [r.url for r in resp.history] + [resp.url]
         result["redirect_chain"] = chain
-        result["redirect_hops"]  = len(resp.history)
-        result["final_url"]      = resp.url
+        result["redirect_hops"] = len(resp.history)
+        result["final_url"] = resp.url
 
         if resp.url.startswith("https://"):
             result["redirects_to_https"] = True
@@ -137,7 +161,7 @@ def fetch_sitemap_urls(base_url: str, session: requests.Session, max_urls: int =
     Liest sitemap.xml und extrahiert URLs die auf Compliance-Seiten hinweisen.
     Unterstützt sitemap index files (verschachtelte Sitemaps).
     """
-    parsed   = urlparse(base_url)
+    parsed = urlparse(base_url)
     sitemap_candidates = [
         f"{parsed.scheme}://{parsed.netloc}/sitemap.xml",
         f"{parsed.scheme}://{parsed.netloc}/sitemap_index.xml",
@@ -315,7 +339,6 @@ def fetch_playwright(url: str, click_consent: bool = True) -> str | None:
             if click_consent:
                 for selector in CONSENT_SELECTORS:
                     try:
-                        # Playwright :has-text() Selektoren direkt nutzen
                         btn = page.locator(selector).first
                         if btn.is_visible(timeout=500):
                             btn.click(timeout=1000)
@@ -344,26 +367,26 @@ def fetch_playwright(url: str, click_consent: bool = True) -> str | None:
         return None
 
 
-def get_html(url: str, session: requests.Session, force_playwright: bool = False) -> tuple[str | None, str | None]:
-    """
-    Lädt HTML einer URL.
-    Nutzt Playwright als Fallback wenn:
-      - requests fehlschlägt
-      - force_playwright=True
-      - HTML zu kurz (SPA-Verdacht)
-    Gibt (html_str, method) oder (None, None) zurück.
-    """
+def get_html(
+    url: str,
+    session: requests.Session,
+    force_playwright: bool = False,
+    allow_playwright: bool = False,
+) -> tuple[str | None, str | None]:
+    
     if force_playwright:
         pw = fetch_playwright(url)
         return (pw, "playwright") if pw else (None, None)
 
     r = fetch(url, session)
 
-    # Playwright-Fallback wenn requests fehlschlägt
+    # Fallback wenn requests fehlschlägt
     if r is None:
-        log.info(f"  [HTML] requests fehlgeschlagen → Playwright-Fallback für {url}")
-        pw = fetch_playwright(url)
-        return (pw, "playwright") if pw else (None, None)
+        if allow_playwright:
+            log.info(f"  [HTML] requests fehlgeschlagen → Playwright-Fallback für {url}")
+            pw = fetch_playwright(url)
+            return (pw, "playwright") if pw else (None, None)
+        return None, None
 
     ct = (r.headers.get("content-type") or "").lower()
     if "text/html" not in ct and "text/plain" not in ct:
@@ -371,17 +394,18 @@ def get_html(url: str, session: requests.Session, force_playwright: bool = False
 
     html = r.text
 
-    # SPA-Erkennung: HTML zu kurz → Playwright-Fallback
-    try:
-        from bs4 import BeautifulSoup as _BS
-        body = _BS(html, "lxml").find("body")
-        body_text = body.get_text(" ", strip=True) if body else ""
-        if len(body_text) < MIN_HTML_LENGTH:
-            log.info(f"  [SPA] Zu wenig Text ({len(body_text)} Zeichen) → Playwright für {url}")
-            pw = fetch_playwright(url)
-            if pw and len(pw) > len(html):
-                return pw, "playwright"
-    except Exception:
-        pass
+    # SPA-Heuristik nur als Hinweis – KEIN automatischer Playwright-Start.
+    if allow_playwright:
+        try:
+            from bs4 import BeautifulSoup as _BS
+            body = _BS(html, "lxml").find("body")
+            body_text = body.get_text(" ", strip=True) if body else ""
+            if len(body_text) < MIN_HTML_LENGTH:
+                log.info(f"  [SPA] Zu wenig Text ({len(body_text)} Zeichen) → Playwright (allow_playwright) für {url}")
+                pw = fetch_playwright(url)
+                if pw and len(pw) > len(html):
+                    return pw, "playwright"
+        except Exception:
+            pass
 
     return html, "requests"

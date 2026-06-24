@@ -1,4 +1,5 @@
-## 📊 System-Architektur
+## System-Architektur (Update des Scorings & DNS Security)
+
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           CheckPoint (TrustScore Engine)                    │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -8,211 +9,234 @@
                               │   Web-UI / UX      │
                               └────────┬───────────┘
                                        │ HTTP/JSON
-                                       │
+                                       │ POST /api/scan
                     ┌──────────────────▼──────────────────┐
-                    │     Backend Flask API Server        │  
+                    │  Backend Flask API Server           │
+                    │  - REST Endpoint(s)                 │
+                    │  - startet Scan-Run                 │
                     └──────────────────┬──────────────────┘
-                                       │
-                       ┌───────────────┼───────────────┐
-                       │               │               │
-                    ┌──▼──┐         ┌──▼──┐         ┌──▼──┐
-                    │ SSL │         │Crawl│         │ Geo │
-                    └─────┘         └─────┘         └─────┘
+                                       │ calls
+                                       ▼
+                    ┌────────────────────────────────────┐
+                    │   Crawler / Orchestrator (Python)  │
+                    │   crawl(url, max_pages, max_depth) │
+                    └───────────────┬─────────────┬──────┘
+                                    │             │
+                    ┌───────────────▼───┐     ┌───▼──────────────┐
+                    │ TLS / HTTPS       │     │ DNS Security     │
+                    │ + HSTS + Redirect │     │ DNSSEC / DMARC   │
+                    │ + Mixed Content   │     │  SPF / DKIM / MX │
+                    └───────────────┬───┘     └───┬──────────────┘
+                                    │             │
+                                    └──────┬──────┘
+                                           ▼
+                    ┌─────────────────────────────────────┐
+                    │ Crawl + Content Analyse (BFS)       │
+                    │ - same_reg_domain scope             │
+                    │ - SEED_PATHS + sitemap boost        │
+                    │ - allow_playwright nur gezielt      │
+                    │ - PDF extraction (optional)         │
+                    │ - Early stop bei vollständigen      │
+                    │   Compliance-Signalen               │
+                    └──────────────────┬──────────────────┘
+                                       ▼
+                    ┌─────────────────────────────────────┐
+                    │ Scoring Engine (fix 0–100)          │
+                    │ - Details: points/max/reason        │
+                    │ - Grade: A+…F                       │
+                    └─────────────────────────────────────┘
 
-## 📐 Klassendiagramm – Backend
+
+## 📐 Klassendiagramm – Backend (UPDATED)
+
 ┌───────────────────────────────────────────────────────────────────┐
 │                        API Server (Flask)                         │
 ├───────────────────────────────────────────────────────────────────┤
 │ - app: Flask()                                                    │
 │ - CORS enabled                                                    │
 ├───────────────────────────────────────────────────────────────────┤
-│ + GET  /api/health() → {"status": "ok", "version": "3.0.0"}       │
+│ + GET  /api/health() → {"status": "ok", "version": "..."}         │
 │ + POST /api/scan(url, max_pages, max_depth) → ScanResult JSON     │
 └───────────────────────┬───────────────────────────────────────────┘
                         │ calls crawl()
-                        │
-┌───────────────────────▼───────────────────────────────────────────┐
+                        ▼
+┌───────────────────────────────────────────────────────────────────┐
 │                     Crawler (Orchestration)                       │
 ├───────────────────────────────────────────────────────────────────┤
-│ def crawl(url: str, max_pages: int, max_depth: int) → dict        │
+│ def crawl(url: str, max_pages: int = 80, max_depth: int = 3) → dict│
 ├───────────────────────────────────────────────────────────────────┤
-│ 1. Normalize URL (http_utils)                                     │
-│ 2. Analyze TLS/SSL (tls_analyzer)                                 │
-│ 3. Fetch root page → headers (http_utils)                         │
-│ 4. Check HSTS (tls_analyzer)                                      │
-│ 5. Get server geo/IP (geo_server)                                 │
-│ 6. BFS-Crawl pages → links, extract_links (page_analyzer)         │
-│ 7. Classify pages (page_analyzer)                                 │
-│ 8. Parse security.txt (page_analyzer)                             │
-│ 9. Compute score (scoring)                                        │
-│ 10. Return result (JSON-serializable dict)                        │
+│ 1. Normalize URL + Scope (http_utils.norm_url, same_reg_domain)    │
+│ 2. TLS Analyse (tls_analyzer.analyze_tls(hostname))                │
+│ 3. Fetch root (http_utils.fetch) → headers                         │
+│ 4. HSTS Check (tls_analyzer.check_hsts(headers))                   │
+│ 5. HTTP→HTTPS Redirect-Chain (http_utils.check_redirect_chain)     │
+│ 6. Mixed Content (Startseite) (page_analyzer.detect_mixed_content) │
+│ 7. Geo/Server (geo_server.get_server_info)                         │
+│ 8. DNS Security (dns_security.analyze_dns_security)                │
+│    - DNSSEC / DMARC / SPF / DKIM / MX                              │
+│ 9. security.txt (page_analyzer.parse_security_txt)                 │
+│    - /.well-known/security.txt und /security.txt                   │
+│ 10. Sitemap boost (http_utils.fetch_sitemap_urls, max_urls=50)     │
+│ 11. BFS-Crawl (Budget & Tiefe)                                     │
+│    - Seed URLs aus SEED_PATHS                                      │
+│    - sitemap_urls werden priorisiert                               │
+│    - pages_crawled < max_pages                                     │
+│    - if depth < max_depth → extract_links() → enqueue              │
+│    - allow_playwright nur für compliance-verdächtige URLs          │
+│    - Early stop wenn Impressum + Datenschutz + DSB + Zertifikate   │
+│ 12. PDF Verarbeitung (optional, bis 5 PDFs)                        │
+│    - http_utils.extract_pdf_text + classify_page(pseudo_html)      │
+│ 13. Compute Score (scoring.compute_score)                          │
+│ 14. Return ScanResult (JSON-serializable dict)                     │
 └───────────────────────┬──────────┬──────────┬──────────┬──────────┘
                         │          │          │          │
-        ┌───────────────▼──┐   ┌───▼────────┐ │    ┌────▼─────────┐
-        │                  │   │            │ │    │              │
-    ┌───▼────────────────┐ │ ┌─▼──────────┐ │ │  ┌─▼────────────┐ │
-    │  TLS Analyzer      │ │ │ Geo Server │ │ │  │Page Analyzer │ │
-    ├────────────────────┤ │ ├────────────┤ │ │  ├──────────────┤ │
-    │ + analyze_tls()    │ │ │+ get_srvr_ ├─┘ │  │ + classify_  │ │
-    │ + check_hsts()     │ │ │ info()(API)│   │  │   page()     │ │
-    │ + get_cert_exp()   │ │ └────────────┘   │  │ + extract_   │ │
-    │ + get_cert_info()  │ │                  │  │   links()    │ │
-    └────────────────────┘ │              ┌───┘  │ + parse_     │ │
-                           │              │      │   security_  │ │
-                       ┌───▼──────────────┘      │   txt()      │ │
-                       │                         └──────────────┘ │
-        ┌──────────────▼──────────────────────────────────────────┐
-        │         HTTP Utils & Session Manager                    │
-        ├─────────────────────────────────────────────────────────┤
-        │ + make_session() → requests.Session (with headers)      │
-        │ + fetch(url, session) → Response | None                 │
-        │ + get_html(response) → str                              │
-        │ + norm_url(url) → normalized str                        │
-        │ + same_reg_domain(url1, url2) → bool                    │
-        └─────────────────────────────────────────────────────────┘
-                           │
-                           ▼
+         ┌──────────────▼──┐   ┌───▼────────┐ │    ┌────▼─────────┐
+         │ TLS Analyzer    │   │ Geo Server │ │    │Page Analyzer │
+         ├─────────────────┤   ├────────────┤ │    ├──────────────┤
+         │ + analyze_tls() │   │+ get_server│ │    │ + classify_  │
+         │ + check_hsts()  │   │  _info()   │ │    │   page()     │
+         └─────────────────┘   └────────────┘ │    │ + extract_   │
+                                              │    │   links()    │
+                                              │    │ + parse_     │
+                                              │    │   security_  │
+                                              │    │   txt()      │
+                                              │    │ + detect_    │
+                                              │    │   mixed_     │
+                                              │    │   content()  │
+                                              │    └──────────────┘
+                        ┌───────────────────────────────┐
+                        │ DNS Security (dns_security.py) │
+                        ├───────────────────────────────┤
+                        │ + analyze_dns_security()       │
+                        │   - dnssec                     │
+                        │   - dmarc                      │
+                        │   - spf                        │
+                        │   - dkim                       │
+                        │   - mx                         │
+                        └───────────────────────────────┘
+
         ┌──────────────────────────────────────────────────────────┐
-        │           Scoring Engine (0-100 Points)                  │
+        │         HTTP Utils & Session Manager (http_utils.py)      │
         ├──────────────────────────────────────────────────────────┤
-        │ + compute_score(tls, compliance, server, security_txt)   │
-        │   → {"score": 0-100, "grade": "A+"-"F", "details": {...}}│
+        │ + make_session() → requests.Session                       │
+        │ + fetch(url, session) → Response | None                   │
+        │ + get_html(url, session, allow_playwright=bool) → (html,…)│
+        │ + norm_url(url) → normalized str                          │
+        │ + same_reg_domain(url1, url2) → bool                      │
+        │ + check_redirect_chain(hostname, session) → redirect info │
+        │ + fetch_sitemap_urls(url, session, max_urls=50) → list     │
+        │ + extract_pdf_text(pdf_url, session) → text | None         │
+        └──────────────────────────────────────────────────────────┘
+
+        ┌──────────────────────────────────────────────────────────┐
+        │           Scoring Engine (fix 0–100 Points)               │
+        ├──────────────────────────────────────────────────────────┤
+        │ + compute_score(tls, compliance, server, security_txt, dns)│
+        │   → {"total_score": 0-100, "grade": "A+"-"F",              │
+        │      "score_details": {key: {points,max,reason}}}          │
         │                                                          │
-        │ Gewichtung:                                              │
-        │   • TLS / HTTPS      → 50 Punkte (40%)                   │
-        │   • Compliance       → 40 Punkte (32%)                   │
-        │   • Server / Geo     →  5 Punkte (4%)                    │
-        │   • ISO-Normen       →  5 Punkte (4%)                    │
-        │   • Security.txt     → 20 Punkte (16%)                   │
-        │   ────────────────────                                   │
-        │   TOTAL            → 120 Punkte → Normalisiert auf 100   │
+        │ Gewichtung (aktuell, fix 100):                            │
+        │   • TLS / HTTPS              → 20 Punkte                   │
+        │   • Compliance               → 40 Punkte                   │
+        │     - Impressum              → 15                          │
+        │     - Datenschutz            → 15                          │
+        │     - DSB (DPO)              → 10                          │
+        │   • Zertifikate & Normen     → 30 Punkte                   │
+        │     - evidenzbasiert gewichtet (ISO/SOC/PCI/BSI/…)         │
+        │   • DNS Security             →  5 Punkte                   │
+        │     - DNSSEC                 →  2                          │
+        │     - DMARC                  →  1                          │
+        │     - SPF                    →  1                          │
+        │     - DKIM                   →  0.5                        │
+        │     - MX                     →  0.5                        │
+        │   • Server / Geo             →  5 Punkte                   │
         │                                                          │
-        │ Noten-Schwellen:                                         │
-        │   95-100: A+      75-84:  B      30-44: E                │
-        │   85-94:  A       60-74:  C       0-29: F                │
-        │   (45-59: D)                                             │
+        │ security.txt: 0 Punkte (Info/Reason, kein Score-Anteil)    │
+        │ Mixed Content: 0 Punkte (Signal/Reason, kein Score-Anteil) │
+        │                                                          │
+        │ Noten-Schwellen (A+…F):                                   │
+        │   95-100: A+   75-84: B    30-44: E                        │
+        │   85-94:  A    60-74: C     0-29: F                        │
+        │   45-59:  D                                             │
         └──────────────────────────────────────────────────────────┘
 
 
-## 📐 Klassendiagramm – Frontend
+## 📐 Klassendiagramm – Frontend (UPDATED)
+
 ┌──────────────────────────────────────────────────────────────────────┐
 │                        App (Main Entry)                              │
 ├──────────────────────────────────────────────────────────────────────┤
 │ addEventListener('DOMContentLoaded', initApp)                        │
 ├──────────────────────────────────────────────────────────────────────┤
-│ • initParticles()     ← Start background animation                  │
-│ • initScanForm()      ← Setup form listeners (from scan.js)         │
-│ • setupScrollBtn()    ← Show/hide scroll-to-top button              │
-│ • setupKeyboardShortcuts() ← ESC closes modal                       │
+│ • initParticles()                                                    │
+│ • initScanForm()      ← scan.js                                      │
+│ • setupScrollBtn()                                                   │
+│ • setupKeyboardShortcuts() ← ESC closes modal                         │
 └──────────────┬───────────────────────────────┬───────────┬──────────┘
                │             │                 │           │
         ┌──────▼──────┐      │        ┌────────▼─────┐  ┌──▼──────────┐
         │ Particles   │      │        │ Form Handler │  │ Utils       │
         ├─────────────┤      │        ├──────────────┤  ├─────────────┤
-        │ Canvas 2D   │      │        │+ initScan()  │  │+ q()        │
-        │ + animate() │      │        │+ onSubmit()  │  │+ qs()       │
-        │ + draw()    │      │        │+ onExample() │  │+ addClass() │
-        │ + particles │      │        │+ callAPI()   │  │+ removeClass│
-        │   []        │      │        │+ onResponse()│  │+ toggleClass│
-        └─────────────┘      │        └──────────────┘  │+ Toast.show │
-                             │                          └─────────────┘
-                    ┌────────────────┬─────────────┐
-                    │                │             │
-            ┌───────▼──────┐  ┌──────▼────┐  ┌────▼──────────┐
-            │ Loading      │  │ Renderer  │  │ Modal Manager │
-            ├──────────────┤  ├───────────┤  ├───────────────┤
-            │ + show()     │  │+ render() │  │+ openModal()  │
-            │ + hide()     │  │+ renderCard  │+ closeModal() │
-            │ + setStep()  │  │+ renderScore │+ populateBody │
-            │ + setPercent │  │+ renderBreak │+ bindCloseBtn │
-            │ + setUrl()   │  │  down()      │               │
-            └──────────────┘  │+ exportJSON()│               │
-                              │+ exportCSV() │               │
-                              └──────────────┴───────────────┘
-                                      ▲
-                                      │ API Response
-                    ┌─────────────────┴─────────────────┐
-                    │                                   │
-            ┌───────▼─────────┐              ┌─────────▼──────┐
-            │ API Call        │              │ Result Render  │
-            ├─────────────────┤              ├────────────────┤
-            │ POST /api/scan  │              │ • Score Hero   │
-            │ → ScanResult    │              │ • TLS Card     │
-            │   JSON          │              │ • Compliance   │
-            │                 │              │   Card         │
-            │ Listener:       │              │ • ISO Card     │
-            │ • onSuccess()   │              │ • Server Card  │
-            │ • onError()     │              │ • Breakdown    │
-            │ • onProgress()  │              │ • Modals       │
-            └─────────────────┘              └────────────────┘
+        │ Canvas 2D   │      │        │+ initScan()  │  │+ q() / qs() │
+        │ + animate() │      │        │+ onSubmit()  │  │+ class utils│
+        │ + draw()    │      │        │+ callAPI()   │  │+ Toast.show │
+        └─────────────┘      │        └──────────────┘  └─────────────┘
+                             │
+                    ┌────────▼──────────┐
+                    │ Loading Overlay    │
+                    ├────────────────────┤
+                    │ + show()/hide()    │
+                    │ + setStep()        │
+                    │ + setPercent()     │
+                    │ + setUrl()         │
+                    └────────┬───────────┘
+                             │ API Response
+                             ▼
+                    ┌────────────────────┐
+                    │ Renderer (renderer)│
+                    ├────────────────────┤
+                    │ + renderResult()   │
+                    │   - Score Hero     │
+                    │   - Pills          │
+                    │   - Cards:         │
+                    │     • TLS / HTTPS  │
+                    │     • DNS Security │
+                    │     • Compliance   │
+                    │     • Zertifikate  │
+                    │     • Server & Geo │
+                    │   - Breakdown      │
+                    │   - Modals         │
+                    │   - Export JSON/CSV│
+                    └────────────────────┘
 
 
-## 🔄 Datenfluss – Scan-Prozess
+## 🔄 Datenfluss – Scan-Prozess (UPDATED)
 
 1. USER Input (URL)
    │
    └──► 2. FORM VALIDATION
        │
-       └──► 3. LOADING OVERLAY (Start Ring Animation)
+       └──► 3. LOADING OVERLAY (Ring + Steps)
            │
            └──► 4. API CALL (POST /api/scan)
                │
                ├──► Backend: crawl()
                │    │
-               │    ├─► TLS Analysis (SSL/HTTPS)
-               │    ├─► Server & Geo (IP Lookup)
-               │    ├─► Page Crawling (BFS)
-               │    ├─► Compliance Check (Impressum, Datenschutz)
-               │    ├─► Security.txt Parse
-               │    └─► Score Calculation (0-100, A-F)
+               │    ├─► TLS: analyze_tls + HSTS + Redirect-Chain
+               │    ├─► Mixed Content: Startseite
+               │    ├─► DNS Security: DNSSEC / DMARC / SPF / DKIM / MX
+               │    ├─► Server & Geo: IP/ASN/CDN/Region (falls vorhanden)
+               │    ├─► security.txt: parse & validate (Info)
+               │    ├─► Sitemap boost + BFS Crawl (max_pages/max_depth)
+               │    ├─► Compliance: Impressum / Datenschutz / DSB
+               │    ├─► Zertifikate & Normen: Evidenz + Gewichtung
+               │    ├─► Optional: PDF extraction + Re-Check
+               │    └─► Score: compute_score() (fix 0–100) + Grade A+…F
                │
                └──► 5. RENDER RESPONSE
                     │
                     ├─► Score Hero (Ring, Grade, Pills)
-                    ├─► Category Cards (TLS, Compliance, ISO, Server)
-                    ├─► Score Breakdown (Points Distribution)
-                    ├─► Modals (Detailed Explanations)
+                    ├─► Cards (TLS, DNS, Compliance, Zertifikate, Server)
+                    ├─► Breakdown (points/max/reason je Kriterium)
+                    ├─► Modals (Details je Kategorie)
                     └─► Export (JSON, CSV)
-
-## 📋 Key Features
-
-✅ **TLS/HTTPS Analysis**
-- Protocol version detection (TLS 1.2, 1.3)
-- Certificate validity & expiration
-- HSTS & preload checking
-
-✅ **Compliance Checks**
-- Impressum detection
-- Datenschutz (Privacy Policy)
-- DSB (Data Protection Officer) link
-
-✅ **Server Intelligence**
-- IP Geolocation
-- CDN Detection
-- ISP & ASN lookup
-
-✅ **Security.txt**
-- Parsing & validation
-- Contact info extraction
-- Expiration checking
-
-✅ **ISO Certifications**
-- ISO 27001, ISO 9001
-- SOC 2 Type II evidence
-- Custom search patterns
-
-✅ **BFS Crawling**
-- Configurable depth & page limits
-- Link extraction & deduplication
-- Same-domain validation
-
-✅ **Scoring Engine**
-- Weighted multi-criteria scoring (0-100)
-- Grade classification (A+ to F)
-- Detailed point breakdown
-
-✅ **Rich Frontend**
-- Real-time loading indicator
-- Interactive modal details
-- Export (JSON, CSV)
-- Responsive design

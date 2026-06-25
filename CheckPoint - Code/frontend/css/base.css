@@ -1,8 +1,4 @@
 /* CheckPoint – base.css: Reset · Variables · Typography · Header · Hero · Search */
-/* ================================================================
-   CheckPoint – style.css v3
-   "Extreme UI/UX" – Glassmorphism · Neon · Animated Score Ring
-   ================================================================ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

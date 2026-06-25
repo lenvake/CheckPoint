@@ -1,5 +1,5 @@
 /* ================================================================
-   CheckPoint – app.js  (Entry Point)
+   1. Entry Point
    Initialisiert alle Module nach DOM-Ready.
 
    Modul-Übersicht:

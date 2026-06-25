@@ -1,5 +1,4 @@
 /* ================================================================
-   CheckPoint – loading.js
    Lade-Overlay: Animierter Ring, Schritt-Anzeige, Fortschritts-%
    ================================================================ */
 'use strict';

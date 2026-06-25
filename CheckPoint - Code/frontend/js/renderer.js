@@ -1,8 +1,5 @@
 /* ================================================================
-   CheckPoint – renderer.js
    Ergebnis-Rendering: Score-Ring, Cards, Breakdown, Export
-   Feature 1: Mixed Content Detection
-   Feature 2: HTTP→HTTPS Redirect-Check
    ================================================================ */
 'use strict';
 

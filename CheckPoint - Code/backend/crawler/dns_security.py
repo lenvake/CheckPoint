@@ -252,7 +252,6 @@ def analyze_dns_security(domain: str, timeout: float = 6.0, dkim_selectors: list
         result["dkim"]["present"] = True
         result["dkim"]["found_selector"] = found
     else:
-        # Could be false negatives; mark as False only if we got clean NOERROR for at least one selector?
         result["dkim"]["present"] = False
 
     return result

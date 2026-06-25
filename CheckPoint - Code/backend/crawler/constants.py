@@ -15,7 +15,7 @@ BROWSER_HEADERS = {
     "Cache-Control": "max-age=0",
 }
 
-# ── Seed-Paths: massiv erweitert (DE + EN + FR + NL + weitere) ───────────────
+# ── Seed-Paths: erweitert (DE + EN + FR + NL + weitere...) ───────────────
 SEED_PATHS = [
     # Startseite
     "/",
@@ -57,7 +57,7 @@ SEED_PATHS = [
     "/cookie-policy", "/cookies",
 ]
 
-# ── Datenschutz-Keywords: massiv erweitert ────────────────────────────────────
+# ── Datenschutz-Keywords: erweitert ────────────────────────────────────
 PRIV_KW = [
     # Deutsch
     "datenschutz", "datenschutzerklärung", "datenschutzerklaerung",
@@ -79,7 +79,7 @@ PRIV_KW = [
     "politica de privacidad",  # ES
 ]
 
-# ── Impressum-Keywords: massiv erweitert ──────────────────────────────────────
+# ── Impressum-Keywords: erweitert ──────────────────────────────────────
 IMPR_KW = [
     # Deutsch
     "impressum", "anbieterkennzeichnung", "diensteanbieter",

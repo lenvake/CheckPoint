@@ -1,5 +1,4 @@
 /* ================================================================
-   CheckPoint – utils.js
    Allgemeine Helferfunktionen (DOM, Farben, Animationen, Toast)
    ================================================================ */
 'use strict';
